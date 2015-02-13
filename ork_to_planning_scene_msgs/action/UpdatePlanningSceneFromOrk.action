@@ -1,0 +1,10 @@
+bool verify_planning_scene_update   # Don't only send the planning scene update, but make sure it arrived
+
+string[] expected_objects           # Objects in the planning scene that are expected to be reobserved
+# If there was no match for such an object it is removed from the planning scene
+# Objects not mentioned in expected_objects (e.g. not in FOV) will not be removed even when there was no match
+
+bool add_tables             # Add tables as collision objects
+string table_prefix           # Table objects will be prefixed with this (using "table" if empty)
+---
+---
