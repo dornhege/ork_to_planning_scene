@@ -90,14 +90,15 @@ void OrkToPlanningScene::orkToPlanningSceneCallback(
         if(table_prefix.empty())
             table_prefix = "table";
 
+        ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult result;
         bool updateOK = processObjectRecognition(actionOrk_.getResult(),
                 goal->expected_objects, goal->verify_planning_scene_update,
-                goal->add_tables, table_prefix);
+                goal->add_tables, table_prefix, result);
         if(!updateOK) {
-            ROS_ERROR("processObjectRecognition failed - probably due to planning scene update not verified.");
+            ROS_ERROR("processObjectRecognition failed - probably due to planning scene update not verified or moveit not running.");
             actionOrkToPlanningScene_.setAborted();
         } else {
-            actionOrkToPlanningScene_.setSucceeded();
+            actionOrkToPlanningScene_.setSucceeded(result);
         }
     } else {
         ROS_ERROR("ObjectRecognition Action did not finish before the time out.");
@@ -140,9 +141,13 @@ bool OrkToPlanningScene::verifyPlanningScene(const std::vector<moveit_msgs::Coll
 bool OrkToPlanningScene::processObjectRecognition(
         const object_recognition_msgs::ObjectRecognitionResultConstPtr & objResult,
         const std::vector<std::string> & expected_objects, bool verify,
-        bool add_tables, const std::string & table_prefix)
+        bool add_tables, const std::string & table_prefix,
+        ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result)
 {
-    std::vector<moveit_msgs::CollisionObject> psObjects = getCollisionObjectsFromPlanningScene();
+    bool ok;
+    std::vector<moveit_msgs::CollisionObject> psObjects = getCollisionObjectsFromPlanningScene(ok);
+    if(!ok)
+        return false;
     std::vector<moveit_msgs::CollisionObject> orObjects = getCollisionObjectsFromObjectRecognition(
             objResult, table_prefix);
 
@@ -202,7 +207,7 @@ bool OrkToPlanningScene::processObjectRecognition(
             matchedObjects.begin(); it != matchedObjects.end(); ++it) {
         moveit_msgs::CollisionObject co = it->second;
         co.id = it->first.id;
-        if(co.type.db == "Tabletop") {
+        if(isTable(co.type)) {
             // matched tables should get replaced geoemtry
             co.operation = moveit_msgs::CollisionObject::ADD;
         } else {
@@ -221,7 +226,7 @@ bool OrkToPlanningScene::processObjectRecognition(
         if(co.operation != moveit_msgs::CollisionObject::REMOVE) {
             moveit_msgs::ObjectColor oc;
             oc.id = co.id;
-            if(co.type.db == "Tabletop") {
+            if(isTable(co.type)) {
                 oc.color.r = 0.67;
                 oc.color.g = 0.33;
                 oc.color.b = 0.0;
@@ -237,6 +242,8 @@ bool OrkToPlanningScene::processObjectRecognition(
     }
     pubPlanningScene_.publish(planning_scene);
 
+    fillResult(result, planning_scene.world.collision_objects);
+
     if(verify) {
         return verifyPlanningScene(planning_scene.world.collision_objects);
     } else {
@@ -244,16 +251,40 @@ bool OrkToPlanningScene::processObjectRecognition(
     }
 }
 
-std::vector<moveit_msgs::CollisionObject> OrkToPlanningScene::getCollisionObjectsFromPlanningScene()
+void OrkToPlanningScene::fillResult(ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result,
+        const std::vector<moveit_msgs::CollisionObject> & collision_objects)
+{
+    forEach(const moveit_msgs::CollisionObject & co, collision_objects) {
+        if(co.operation == moveit_msgs::CollisionObject::ADD) {
+            if(isTable(co.type))
+                result.added_tables.push_back(co.id);
+            else
+                result.added_objects.push_back(co.id);
+        } else if(co.operation == moveit_msgs::CollisionObject::REMOVE) {
+            if(isTable(co.type))
+                result.removed_tables.push_back(co.id);
+            else
+                result.removed_objects.push_back(co.id);
+        } else if(co.operation == moveit_msgs::CollisionObject::MOVE) {
+            if(isTable(co.type))
+                result.moved_tables.push_back(co.id);
+            else
+                result.moved_objects.push_back(co.id);
+        }
+    }
+}
+
+std::vector<moveit_msgs::CollisionObject> OrkToPlanningScene::getCollisionObjectsFromPlanningScene(bool & ok)
 {
     moveit_msgs::GetPlanningScene::Request request;
     moveit_msgs::GetPlanningScene::Response response;
-    std::vector<std::string> result;
     request.components.components = moveit_msgs::PlanningSceneComponents::WORLD_OBJECT_GEOMETRY;
     if (!srvPlanningScene_.call(request, response)) {
+        ok = false;
         ROS_ERROR("%s: planning scene request failed.", __func__);
         return std::vector<moveit_msgs::CollisionObject>();
     }
+    ok = true;
     return response.scene.world.collision_objects;
 }
 
@@ -266,7 +297,7 @@ std::vector<moveit_msgs::CollisionObject> OrkToPlanningScene::getCollisionObject
         moveit_msgs::CollisionObject co;
         bool objOK = collisionObjectFromRecognizedObject(ro, co, table_prefix);
         if(!objOK) {
-            if(ro.type.db == "Tabletop") {
+            if(isTable(ro.type)) {
                 ROS_WARN("Filtered a table object as it is too small, not in the required z range, or not vertical.");
             } else {
                 ROS_WARN_STREAM("Could not convert object with type: " << ro.type << " to CollisionObject.");
@@ -384,7 +415,7 @@ bool OrkToPlanningScene::collisionObjectFromRecognizedObject(const object_recogn
     co.header = ro.header;
     co.type = ro.type;
 
-    if(co.type.db == "Tabletop") {  // this is a table, not a RecognizedObject
+    if(isTable(co.type)) {  // this is a table, not a RecognizedObject
         if(!isValidTable(ro)) {
             return false;
         }
@@ -450,9 +481,9 @@ void OrkToPlanningScene::determineObjectMatches(
 
     std::set<const moveit_msgs::CollisionObject*> unhandledORObjects;
     forEach(const moveit_msgs::CollisionObject & co, objectRecognitionObjects) {
-        if(handleTables && co.type.db != "Tabletop")
+        if(handleTables && !isTable(co.type))
             continue;
-        if(!handleTables && co.type.db == "Tabletop")
+        if(!handleTables && isTable(co.type))
             continue;
 
         if(co.mesh_poses.empty() && co.primitive_poses.empty()) {
@@ -466,9 +497,9 @@ void OrkToPlanningScene::determineObjectMatches(
     // Try to match OR objects to the PS objects
     // Each PS object should have exactly one match
     forEach(const moveit_msgs::CollisionObject & psObject, planningSceneObjects) {
-        if(handleTables && psObject.type.db != "Tabletop")
+        if(handleTables && !isTable(psObject.type))
             continue;
-        if(!handleTables && psObject.type.db == "Tabletop")
+        if(!handleTables && isTable(psObject.type))
             continue;
 
         std::vector<const moveit_msgs::CollisionObject*> typeMatches;
@@ -598,6 +629,11 @@ void OrkToPlanningScene::updateMaxObjectId(const moveit_msgs::CollisionObject & 
     if(typeId.second > curId) {
         curId = typeId.second;
     }
+}
+
+bool OrkToPlanningScene::isTable(const object_recognition_msgs::ObjectType & type)
+{
+    return type.db == "Tabletop";
 }
 
 }

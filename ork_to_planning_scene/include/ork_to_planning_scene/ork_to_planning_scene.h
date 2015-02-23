@@ -48,10 +48,14 @@ namespace ork_to_planning_scene
             /// Handle an ORK result and update planning scene accordingly.
             bool processObjectRecognition(const object_recognition_msgs::ObjectRecognitionResultConstPtr & objResult,
                     const std::vector<std::string> & expected_objects, bool verify,
-                    bool add_tables, const std::string & table_prefix);
+                    bool add_tables, const std::string & table_prefix,
+                    ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result);
+
+            void fillResult(ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result,
+                    const std::vector<moveit_msgs::CollisionObject> & collision_objects);
 
             /// Retrieves all CollisionObjects currently in the planning scene.
-            std::vector<moveit_msgs::CollisionObject> getCollisionObjectsFromPlanningScene();
+            std::vector<moveit_msgs::CollisionObject> getCollisionObjectsFromPlanningScene(bool & ok);
 
             /// Computes CollisionObjects from an ORK result. Names will not be unique, yet.
             std::vector<moveit_msgs::CollisionObject> getCollisionObjectsFromObjectRecognition(
@@ -109,6 +113,8 @@ namespace ork_to_planning_scene
             /// cup_1, cup_3, tray_2 -> {cup: 3, tray: 2}
             void updateMaxObjectId(const moveit_msgs::CollisionObject & co,
                     std::map<std::string, unsigned int> & maxObjectId);
+
+            bool isTable(const object_recognition_msgs::ObjectType & type);
 
         protected:
             // ROS Interface

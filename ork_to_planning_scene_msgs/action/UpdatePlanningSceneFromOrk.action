@@ -7,4 +7,10 @@ string[] expected_objects           # Objects in the planning scene that are exp
 bool add_tables             # Add tables as collision objects
 string table_prefix           # Table objects will be prefixed with this (using "table" if empty)
 ---
+string[] added_objects
+string[] removed_objects
+string[] moved_objects
+string[] added_tables
+string[] removed_tables
+string[] moved_tables
 ---
