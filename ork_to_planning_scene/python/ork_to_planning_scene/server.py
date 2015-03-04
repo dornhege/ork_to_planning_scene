@@ -153,7 +153,7 @@ class RecognitionTabletopServer:
         if self.recognition_result is None or self.table_result is None:
             not_there = " recognition_result" if self.recognition_result is None else ""
             not_there += " table_result" if self.table_result is None else ""
-            rospy.logerror("Still no" + not_there + " - failing")
+            rospy.logerr("Still no" + not_there + " - failing")
             self.server.set_aborted()
         else:
             result.recognized_objects = self.recognition_result
