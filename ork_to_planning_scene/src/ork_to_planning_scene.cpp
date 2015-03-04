@@ -6,13 +6,32 @@
 #include <set>
 #include <utility>
 #include <algorithm>
+#include <visualization_msgs/MarkerArray.h>
+#include <opencv/cv.h>
 
 #include <boost/foreach.hpp>
 #define forEach BOOST_FOREACH
 
-// TODO:
-// table merging when overlaps with N known tables? Or not important for now?
-// Would be nice to filter objects that are from "another" table (e.g. on the floor)
+// TODO 
+// After merging: setup for matching
+
+// Table Matching:
+// - dist to convex hull
+// - test for pt in convex hull (table_match_idst allows how much outside, neg makes sense in a way now)
+// - the more inside the better/closer + warn if multiple?
+// - Can check z more rigorously
+// - do some nicer helper fns like: dist point to table (+ bb params = ON)
+//
+// - Multiple table merging when overlaps with N known tables?
+//
+// Other/Minor:
+// - Would be nice to filter objects that are from "another" table (e.g. on the floor)
+// - Are table colors lost when add/updating? -> Maybe we add/match another one, color that and leave other color undef?
+// - state convexity for table meshes somewhere
+//   Corner table would place stuff in air
+// - action replies for tables: are always add/update
+// -> also usage usually: after base move merge off (match first to move back), then merge on -> no growing table
+// - isValidTable: Maybe at least one point should be in reach of robot? (maxDistOfTable or similar)
 
 namespace ork_to_planning_scene
 {
@@ -27,6 +46,7 @@ OrkToPlanningScene::OrkToPlanningScene() :
     srvObjectInfo_ = nh.serviceClient<object_recognition_msgs::GetObjectInformation>("get_object_info");
     srvPlanningScene_ = nh.serviceClient<moveit_msgs::GetPlanningScene>(move_group::GET_PLANNING_SCENE_SERVICE_NAME);
     pubPlanningScene_ = nh.advertise<moveit_msgs::PlanningScene>("planning_scene", 1);
+    pubMarker_ = nh.advertise<visualization_msgs::MarkerArray>("ork_to_planning_scene_markers", 5);
 
     ROS_INFO("Waiting for recognize_objects action server to start.");
     actionOrk_.waitForServer();
@@ -44,7 +64,9 @@ OrkToPlanningScene::OrkToPlanningScene() :
 
     ros::NodeHandle nhPriv("~");
     nhPriv.param("object_match_distance", object_match_distance_, 0.15);
-    nhPriv.param("table_match_distance", table_match_distance_, 0.5);
+    nhPriv.param("table_match_distance", table_match_distance_, 1.0);
+    nhPriv.param("object_z_match_distance", object_z_match_distance_, 0.15);
+    nhPriv.param("table_z_match_distance", table_z_match_distance_, 0.1);
     nhPriv.param("table_min_area", table_min_area_, 0.16);
     nhPriv.param("table_min_z", table_min_z_, 0.3);
     nhPriv.param("table_max_z", table_max_z_, 1.1);
@@ -64,8 +86,8 @@ OrkToPlanningScene::DistanceToPose::DistanceToPose(
 bool OrkToPlanningScene::DistanceToPose::operator()(
         const moveit_msgs::CollisionObject* lhs, const moveit_msgs::CollisionObject* rhs) 
 {
-    double dLhs = otps_.poseDistance(pose_, OrkToPlanningScene::getPoseStamped(*lhs));
-    double dRhs = otps_.poseDistance(pose_, OrkToPlanningScene::getPoseStamped(*rhs));
+    double dLhs = otps_.poseDistance(pose_, OrkToPlanningScene::getPoseStamped(*lhs)).first;
+    double dRhs = otps_.poseDistance(pose_, OrkToPlanningScene::getPoseStamped(*rhs)).first;
     return dLhs < dRhs;
 }
 
@@ -93,7 +115,7 @@ void OrkToPlanningScene::orkToPlanningSceneCallback(
         ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult result;
         bool updateOK = processObjectRecognition(actionOrk_.getResult(),
                 goal->expected_objects, goal->verify_planning_scene_update,
-                goal->add_tables, table_prefix, result);
+                goal->add_tables, table_prefix, goal->merge_tables, result);
         if(!updateOK) {
             ROS_ERROR("processObjectRecognition failed - probably due to planning scene update not verified or moveit not running.");
             actionOrkToPlanningScene_.setAborted();
@@ -141,7 +163,7 @@ bool OrkToPlanningScene::verifyPlanningScene(const std::vector<moveit_msgs::Coll
 bool OrkToPlanningScene::processObjectRecognition(
         const object_recognition_msgs::ObjectRecognitionResultConstPtr & objResult,
         const std::vector<std::string> & expected_objects, bool verify,
-        bool add_tables, const std::string & table_prefix,
+        bool add_tables, const std::string & table_prefix, bool merge_tables,
         ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result)
 {
     bool ok;
@@ -210,6 +232,9 @@ bool OrkToPlanningScene::processObjectRecognition(
         if(isTable(co.type)) {
             // matched tables should get replaced geoemtry
             co.operation = moveit_msgs::CollisionObject::ADD;
+            if(merge_tables) {  // merge new table in co with old table in it->ifrst
+                co = merge_table_objects(it->first, co);
+            }
         } else {
             co.operation = moveit_msgs::CollisionObject::MOVE;
             // delete geometry, we only want to move this.
@@ -361,6 +386,111 @@ shape_msgs::Mesh OrkToPlanningScene::createMeshFromCountour(const std::vector<ge
     return mesh;
 }
 
+// TODO hack: remove or make proper
+visualization_msgs::Marker markerFromPoints(const std::vector<geometry_msgs::Point> & pts,
+        const geometry_msgs::Pose & pose, const std_msgs::Header & header,
+        const std::string & ns)
+{
+    visualization_msgs::Marker mark;
+    mark.header = header;
+    mark.ns = ns;
+    mark.id = 0;
+    mark.type = visualization_msgs::Marker::POINTS;
+    mark.action = visualization_msgs::Marker::ADD;
+    mark.pose = pose;
+    mark.scale.x = 0.05;
+    mark.scale.y = 0.05;
+    mark.scale.z = 0.05;
+    mark.color.a = 0.5;
+    if(ns == "old_table") {
+        mark.color.r = 1.0;
+    } else if(ns == "new_table") {
+        mark.color.g = 1.0;
+    } else if(ns == "old_table_new_frame") {
+        mark.color.b = 1.0;
+    } else if(ns == "old_table_new_frame_pose") {
+        mark.color.r = 1.0;
+        mark.color.g = 1.0;
+    }
+    mark.points = pts;
+
+    return mark;
+}
+
+moveit_msgs::CollisionObject OrkToPlanningScene::merge_table_objects(const moveit_msgs::CollisionObject & old_table,
+        const moveit_msgs::CollisionObject & new_table)
+{
+    moveit_msgs::CollisionObject ret = new_table;
+    ROS_ASSERT(old_table.meshes.size() == old_table.mesh_poses.size());
+    ROS_ASSERT(old_table.meshes.size() == 1);
+    ROS_ASSERT(new_table.meshes.size() == new_table.mesh_poses.size());
+    ROS_ASSERT(new_table.meshes.size() == 1);
+    // need to transform old points into new tables pose
+    tf::StampedTransform oldToNew;
+    try {
+        tf_.waitForTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
+                ros::Duration(0.5));
+        tf_.lookupTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
+                oldToNew);
+    } catch (tf::TransformException ex) {
+        ROS_ERROR("%s", ex.what());
+        return ret;
+    }
+
+    tf::Pose oldPose;
+    tf::Pose newPose;
+    tf::poseMsgToTF(old_table.mesh_poses[0], oldPose);
+    tf::poseMsgToTF(new_table.mesh_poses[0], newPose);
+    // oldPose is in old_table frame_id
+    // newPose is in new_table frame_id
+    // we need a tf from a pt at oldPose in old_table frame to a pt at newPose in new_table frame
+    tf::Pose oldToNewPt = newPose.inverseTimes(oldToNew) * oldPose;
+
+    std::vector<cv::Point2f> points;
+    // we should have created this from a contour, so the first half of the vertices
+    // should be the original contour
+    for(unsigned int i = 0; i < old_table.meshes[0].vertices.size()/2; ++i) {
+        const geometry_msgs::Point & pt = old_table.meshes[0].vertices[i];
+        tf::Vector3 tfPt;
+        tf::pointMsgToTF(pt, tfPt);
+
+        tf::Vector3 oldPtInNew = oldToNewPt * tfPt;
+
+        if(fabs(oldPtInNew.z()) > 0.05) {
+            ROS_ERROR("%s: Old Pt had non-zero z: (%f %f %f)", __func__,
+                    oldPtInNew.x(), oldPtInNew.y(), oldPtInNew.z());
+            continue;
+        }
+        points.push_back(cv::Point2f(oldPtInNew.x(), oldPtInNew.y()));
+    }
+
+    std::vector<geometry_msgs::Point> visNewPts;
+    for(unsigned int i = 0; i < new_table.meshes[0].vertices.size()/2; ++i) {
+        const geometry_msgs::Point & pt = new_table.meshes[0].vertices[i];
+        if(fabs(pt.z) > 0.05) {
+            ROS_ERROR("%s: new Pt had non-zero z: (%f %f %f)", __func__,
+                    pt.x, pt.y, pt.z);
+            continue;
+        }
+        points.push_back(cv::Point2f(pt.x, pt.y));
+    }
+
+    // do cv hull with the points of both
+    std::vector<cv::Point2f> convex_hull;
+    cv::convexHull(points, convex_hull, true);
+    std::vector<geometry_msgs::Point> contours;
+    forEach(const cv::Point2f & pt, convex_hull) {
+        geometry_msgs::Point ptMsg;
+        ptMsg.x = pt.x;
+        ptMsg.y = pt.y;
+        ptMsg.z = 0.0;
+        contours.push_back(ptMsg);
+    }
+    // finally recreate mesh from merged contours
+    ret.meshes[0] = createMeshFromCountour(contours);
+    return ret;
+}
+
 bool OrkToPlanningScene::isValidTable(const object_recognition_msgs::RecognizedObject & ro)
 {
     // Assuming to ro has bounding contours with z about 0 and a pose.
@@ -506,10 +636,10 @@ void OrkToPlanningScene::determineObjectMatches(
         std::vector<const moveit_msgs::CollisionObject*> otherTypeMatches;
         if(handleTables)
             findMatchingObjects(psObject, unhandledORObjects, typeMatches, otherTypeMatches,
-                    table_match_distance_);
+                    table_match_distance_, table_z_match_distance_);
         else
             findMatchingObjects(psObject, unhandledORObjects, typeMatches, otherTypeMatches,
-                    object_match_distance_);
+                    object_match_distance_, object_z_match_distance_);
 
         if(otherTypeMatches.empty()) {
             if(typeMatches.empty()) {
@@ -555,11 +685,12 @@ void OrkToPlanningScene::findMatchingObjects(const moveit_msgs::CollisionObject 
         const std::set<const moveit_msgs::CollisionObject*> & orObjects,
         std::vector<const moveit_msgs::CollisionObject*> & typeMatches,
         std::vector<const moveit_msgs::CollisionObject*> & otherTypeMatches,
-        double match_distance)
+        double match_distance, double z_match_distance)
 {
     geometry_msgs::PoseStamped psPose = getPoseStamped(psObject);
     forEach(const moveit_msgs::CollisionObject* co, orObjects) {
-        if(poseDistance(psPose, getPoseStamped(*co)) <= match_distance) {
+        std::pair<double, double> dist = poseDistance(psPose, getPoseStamped(*co));
+        if(dist.first <= match_distance && dist.second <= z_match_distance) {
             if(psObject.type.key == co->type.key && psObject.type.db == co->type.db)
                 typeMatches.push_back(co);
             else
@@ -594,7 +725,7 @@ geometry_msgs::PoseStamped OrkToPlanningScene::getPoseStamped(const moveit_msgs:
     return ret;
 }
 
-double OrkToPlanningScene::poseDistance(const geometry_msgs::PoseStamped & posePS,
+std::pair<double, double> OrkToPlanningScene::poseDistance(const geometry_msgs::PoseStamped & posePS,
         const geometry_msgs::PoseStamped & poseOR)
 {
     // OR poses might be in a sensor frame -> transform to PS frame first
@@ -612,7 +743,8 @@ double OrkToPlanningScene::poseDistance(const geometry_msgs::PoseStamped & poseP
     tf::poseMsgToTF(posePS.pose, tfPS);
     tf::poseMsgToTF(poseOR_transformed.pose, tfOR);
     tf::Pose delta = tfPS.inverseTimes(tfOR);
-    return hypot(delta.getOrigin().x(), delta.getOrigin().y());   // usually we're interested in the 2d distance
+    return std::make_pair(hypot(delta.getOrigin().x(), delta.getOrigin().y()),
+            fabs(delta.getOrigin().z()));   // usually we're interested in the 2d distance independently
 }
 
 

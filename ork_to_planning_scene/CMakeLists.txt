@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
+find_package(OpenCV REQUIRED)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -105,6 +106,7 @@ catkin_package(
 include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Declare a cpp library
@@ -122,6 +124,7 @@ add_dependencies(ork_to_planning_scene ork_to_planning_scene_msgs_generate_messa
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ork_to_planning_scene
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
 
 #############

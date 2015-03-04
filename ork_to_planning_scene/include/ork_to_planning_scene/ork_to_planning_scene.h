@@ -48,7 +48,7 @@ namespace ork_to_planning_scene
             /// Handle an ORK result and update planning scene accordingly.
             bool processObjectRecognition(const object_recognition_msgs::ObjectRecognitionResultConstPtr & objResult,
                     const std::vector<std::string> & expected_objects, bool verify,
-                    bool add_tables, const std::string & table_prefix,
+                    bool add_tables, const std::string & table_prefix, bool merge_tables,
                     ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result);
 
             void fillResult(ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result,
@@ -67,6 +67,10 @@ namespace ork_to_planning_scene
 
             /// Does this RecognizedObject fit our params for a table?
             bool isValidTable(const object_recognition_msgs::RecognizedObject & ro);
+
+            /// Merge two table object contours.
+            moveit_msgs::CollisionObject merge_table_objects(const moveit_msgs::CollisionObject & old_table,
+                    const moveit_msgs::CollisionObject & new_table);
 
             /// Convert an ORK object to a CollisionObject as good as possible.
             bool collisionObjectFromRecognizedObject(const object_recognition_msgs::RecognizedObject & ro,
@@ -100,13 +104,13 @@ namespace ork_to_planning_scene
                     const std::set<const moveit_msgs::CollisionObject*> & orObjects,
                     std::vector<const moveit_msgs::CollisionObject*> & typeMatches,
                     std::vector<const moveit_msgs::CollisionObject*> & otherTypeMatches,
-                    double match_distance);
+                    double match_distance, double z_match_distance);
 
             /// Retrieve a pose from a CollisionObject
             static geometry_msgs::PoseStamped getPoseStamped(const moveit_msgs::CollisionObject & co);
 
-            /// Compute the 2d distance between two poses
-            double poseDistance(const geometry_msgs::PoseStamped & posePS,
+            /// Compute the 2d distance and z distance between two poses
+            std::pair<double, double> poseDistance(const geometry_msgs::PoseStamped & posePS,
                     const geometry_msgs::PoseStamped & poseOR);
 
             /// Determine the largest taken id for each known object's symbolic name, e.g.
@@ -124,6 +128,7 @@ namespace ork_to_planning_scene
             ros::ServiceClient srvObjectInfo_;
             ros::ServiceClient srvPlanningScene_;
             ros::Publisher pubPlanningScene_;
+            ros::Publisher pubMarker_;
 
             actionlib::SimpleActionServer<ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkAction>
                 actionOrkToPlanningScene_; 
@@ -131,6 +136,8 @@ namespace ork_to_planning_scene
             // Parameters
             double object_match_distance_;
             double table_match_distance_;
+            double object_z_match_distance_;
+            double table_z_match_distance_;
             double table_min_area_;
             double table_min_z_;
             double table_max_z_;
