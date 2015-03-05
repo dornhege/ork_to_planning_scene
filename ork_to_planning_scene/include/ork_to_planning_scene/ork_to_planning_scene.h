@@ -16,6 +16,18 @@
 
 namespace ork_to_planning_scene
 {
+    /// Add recognized objects and tables from ORK to the Moveit planning scene.
+    /**
+     * Table meshes will be generated from table contours.
+     * Ork must produce table objects for this.
+     * Tables are assumed to be conves, i.e., corner tables or similar will
+     * be represented by their convex hull, thus closing gaps!
+     *
+     * Convex hulls of matched tables are optionally merged, otherwise replaced.
+     * Thus tables can only grow.
+     * When re-visiting a known location after navigation it might thus be advisable to disable
+     * merge_tables for the first observation to counter any inaccuracies due to localization.
+     */
     class OrkToPlanningScene
     {
         public:

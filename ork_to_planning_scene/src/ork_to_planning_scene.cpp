@@ -216,6 +216,28 @@ bool OrkToPlanningScene::processObjectRecognition(
     // finally make the setup PS for moveing matched ones, adding new, optionally removing undetected
     moveit_msgs::PlanningScene planning_scene;
     planning_scene.is_diff = true;  // this is fine, we don't leave anything unspecified that we don't want
+
+    // set colors
+    // for some reason a diff replaces colors, so re-set the colors for known objects somewhere else
+    // Do these now before we remove the unexpected ones
+    // The extra colors for then-removed objects shouldnt hurt
+    forEach(const moveit_msgs::CollisionObject & co, planningSceneUndetectedObjects) {
+        moveit_msgs::ObjectColor oc;
+        oc.id = co.id;
+        if(isTable(co.type)) {
+            oc.color.r = 0.67;
+            oc.color.g = 0.33;
+            oc.color.b = 0.0;
+            oc.color.a = 1.0;
+        } else {
+            oc.color.r = 0.0;
+            oc.color.g = 1.0;
+            oc.color.b = 0.0;
+            oc.color.a = 1.0;
+        }
+        planning_scene.object_colors.push_back(oc);
+    }
+
     removeNotExpectedToBeDetected(planningSceneUndetectedObjects, expected_objects);
     forEach(moveit_msgs::CollisionObject & co, planningSceneUndetectedObjects) {
         co.operation = moveit_msgs::CollisionObject::REMOVE;
@@ -253,7 +275,7 @@ bool OrkToPlanningScene::processObjectRecognition(
         planning_scene.world.collision_objects.push_back(co);
         ROS_INFO("Updating pose for matched object: %s", co.id.c_str());
     }
-    // set colors
+    // set colors for handled objects
     forEach(const moveit_msgs::CollisionObject & co, planning_scene.world.collision_objects) {
         if(co.operation != moveit_msgs::CollisionObject::REMOVE) {
             moveit_msgs::ObjectColor oc;
