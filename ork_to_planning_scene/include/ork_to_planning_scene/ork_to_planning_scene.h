@@ -30,6 +30,17 @@ namespace ork_to_planning_scene
                     OrkToPlanningScene & otps_;
             };
 
+            /// Class to sort Tables by their distance to a given table.
+            struct DistanceToTable
+            {
+                public:
+                    DistanceToTable(const moveit_msgs::CollisionObject & table, OrkToPlanningScene & otps);
+                    bool operator()(const moveit_msgs::CollisionObject* lhs, const moveit_msgs::CollisionObject* rhs);
+                protected:
+                    const moveit_msgs::CollisionObject & table_;
+                    OrkToPlanningScene & otps_;
+            };
+
         public:
             OrkToPlanningScene();
 
@@ -67,6 +78,10 @@ namespace ork_to_planning_scene
 
             /// Does this RecognizedObject fit our params for a table?
             bool isValidTable(const object_recognition_msgs::RecognizedObject & ro);
+
+            /// Compute the transform to move contour vertices in old_table to new_table.
+            tf::Pose computeTableContourTransform(const moveit_msgs::CollisionObject & old_table,
+                    const moveit_msgs::CollisionObject & new_table);
 
             /// Merge two table object contours.
             moveit_msgs::CollisionObject merge_table_objects(const moveit_msgs::CollisionObject & old_table,
@@ -106,12 +121,27 @@ namespace ork_to_planning_scene
                     std::vector<const moveit_msgs::CollisionObject*> & otherTypeMatches,
                     double match_distance, double z_match_distance);
 
+            /// Find tables in orObjects that are near psObject
+            /**
+             * \param [out] typeMatches near objects that have the same type
+             */
+            void findMatchingTables(const moveit_msgs::CollisionObject & psObject,
+                    const std::set<const moveit_msgs::CollisionObject*> & orObjects,
+                    std::vector<const moveit_msgs::CollisionObject*> & typeMatches,
+                    double match_distance, double z_match_distance);
+
             /// Retrieve a pose from a CollisionObject
             static geometry_msgs::PoseStamped getPoseStamped(const moveit_msgs::CollisionObject & co);
 
             /// Compute the 2d distance and z distance between two poses
             std::pair<double, double> poseDistance(const geometry_msgs::PoseStamped & posePS,
                     const geometry_msgs::PoseStamped & poseOR);
+
+            /// Compute 2d distance between tables.
+            /// Only match to points from or_table if they are close enough in z.
+            /// Just performs point-poly distance for or_table's corners!
+            double tableDistance(const moveit_msgs::CollisionObject & ps_table,
+                    const moveit_msgs::CollisionObject & or_table, double z_match_distance);
 
             /// Determine the largest taken id for each known object's symbolic name, e.g.
             /// cup_1, cup_3, tray_2 -> {cup: 3, tray: 2}
