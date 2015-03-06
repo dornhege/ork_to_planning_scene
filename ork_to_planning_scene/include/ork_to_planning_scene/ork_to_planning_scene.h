@@ -78,7 +78,8 @@ namespace ork_to_planning_scene
                     const std::vector<moveit_msgs::CollisionObject> & collision_objects);
 
             /// Retrieves all CollisionObjects currently in the planning scene.
-            std::vector<moveit_msgs::CollisionObject> getCollisionObjectsFromPlanningScene(bool & ok);
+            std::pair<std::vector<moveit_msgs::CollisionObject>, std::vector<moveit_msgs::CollisionObject> >
+                getCollisionObjectsFromPlanningScene(bool & ok);
 
             /// Computes CollisionObjects from an ORK result. Names will not be unique, yet.
             std::vector<moveit_msgs::CollisionObject> getCollisionObjectsFromObjectRecognition(

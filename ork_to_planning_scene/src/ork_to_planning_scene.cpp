@@ -12,20 +12,9 @@
 #include <boost/foreach.hpp>
 #define forEach BOOST_FOREACH
 
-// TODO 
-// Table Matching:
+// Later TODO
 // - Merge multiple tables into one when overlaps with N known tables?
-//
-// Other/Minor:
-// - Are table colors lost when add/updating? -> Maybe we add/match another one, color that and leave other color undef?
-// - state convexity for table meshes somewhere
-//   Corner table would place stuff in air
-// - action replies for tables: are always add/update
-// -> also usage usually: after base move merge off (match first to move back), then merge on -> no growing table
 // - isValidTable: Maybe at least one point should be in reach of robot? (maxDistOfTable or similar)
-//
-// - What happens if coke_1 is attached and we recognize a new coke? Do we name that coke_1 (no a CO, by attached CO
-//   or coke_2?
 
 namespace ork_to_planning_scene
 {
@@ -174,7 +163,11 @@ bool OrkToPlanningScene::processObjectRecognition(
         ork_to_planning_scene_msgs::UpdatePlanningSceneFromOrkResult & result)
 {
     bool ok;
-    std::vector<moveit_msgs::CollisionObject> psObjects = getCollisionObjectsFromPlanningScene(ok);
+    std::pair< std::vector<moveit_msgs::CollisionObject>, std::vector<moveit_msgs::CollisionObject> >
+        psAllObjects = getCollisionObjectsFromPlanningScene(ok);
+    const std::vector<moveit_msgs::CollisionObject> & psObjects = psAllObjects.first;
+    // we care about the attached ones only to not duplicate their id for new ones
+    const std::vector<moveit_msgs::CollisionObject> & psAttObjects = psAllObjects.second;
     if(!ok)
         return false;
     std::vector<moveit_msgs::CollisionObject> orObjects = getCollisionObjectsFromObjectRecognition(
@@ -204,6 +197,8 @@ bool OrkToPlanningScene::processObjectRecognition(
     forEach(const moveit_msgs::CollisionObject & co, planningSceneUndetectedObjects)
         updateMaxObjectId(co, maxObjectId);
     forEach(const moveit_msgs::CollisionObject & co, planningSceneReplacedObjects)
+        updateMaxObjectId(co, maxObjectId);
+    forEach(const moveit_msgs::CollisionObject & co, psAttObjects)
         updateMaxObjectId(co, maxObjectId);
 
     // assign new unique names
@@ -260,7 +255,7 @@ bool OrkToPlanningScene::processObjectRecognition(
         co.id = it->first.id;
         if(isTable(co.type)) {
             // matched tables should get replaced geoemtry
-            co.operation = moveit_msgs::CollisionObject::ADD;
+            co.operation = moveit_msgs::CollisionObject::MOVE;
             if(merge_tables) {  // merge new table in co with old table in it->ifrst
                 co = merge_table_objects(it->first, co);
             }
@@ -273,7 +268,7 @@ bool OrkToPlanningScene::processObjectRecognition(
             co.planes.clear();
         }
         planning_scene.world.collision_objects.push_back(co);
-        ROS_INFO("Updating pose for matched object: %s", co.id.c_str());
+        ROS_INFO("Updating matched object: %s", co.id.c_str());
     }
     // set colors for handled objects
     forEach(const moveit_msgs::CollisionObject & co, planning_scene.world.collision_objects) {
@@ -294,10 +289,17 @@ bool OrkToPlanningScene::processObjectRecognition(
             planning_scene.object_colors.push_back(oc);
         }
     }
-    pubPlanningScene_.publish(planning_scene);
 
     fillResult(result, planning_scene.world.collision_objects);
 
+    // slight hack: Tables must be ADD for an update as geometry has changed
+    // Was only set to MOVE before to differentiate that in fillResult
+    forEach(moveit_msgs::CollisionObject & co, planning_scene.world.collision_objects) {
+        if(isTable(co.type) && co.operation == moveit_msgs::CollisionObject::MOVE)
+            co.operation = moveit_msgs::CollisionObject::ADD;
+    }
+
+    pubPlanningScene_.publish(planning_scene);
     if(verify) {
         return verifyPlanningScene(planning_scene.world.collision_objects);
     } else {
@@ -321,25 +323,33 @@ void OrkToPlanningScene::fillResult(ork_to_planning_scene_msgs::UpdatePlanningSc
                 result.removed_objects.push_back(co.id);
         } else if(co.operation == moveit_msgs::CollisionObject::MOVE) {
             if(isTable(co.type))
-                result.moved_tables.push_back(co.id);
+                result.updated_tables.push_back(co.id);
             else
                 result.moved_objects.push_back(co.id);
         }
     }
 }
 
-std::vector<moveit_msgs::CollisionObject> OrkToPlanningScene::getCollisionObjectsFromPlanningScene(bool & ok)
+std::pair<std::vector<moveit_msgs::CollisionObject>, std::vector<moveit_msgs::CollisionObject> >
+    OrkToPlanningScene::getCollisionObjectsFromPlanningScene(bool & ok)
 {
     moveit_msgs::GetPlanningScene::Request request;
     moveit_msgs::GetPlanningScene::Response response;
-    request.components.components = moveit_msgs::PlanningSceneComponents::WORLD_OBJECT_GEOMETRY;
+    request.components.components = moveit_msgs::PlanningSceneComponents::WORLD_OBJECT_GEOMETRY |
+        moveit_msgs::PlanningSceneComponents::ROBOT_STATE_ATTACHED_OBJECTS;
     if (!srvPlanningScene_.call(request, response)) {
         ok = false;
         ROS_ERROR("%s: planning scene request failed.", __func__);
-        return std::vector<moveit_msgs::CollisionObject>();
+        return std::make_pair(std::vector<moveit_msgs::CollisionObject>(),
+                std::vector<moveit_msgs::CollisionObject>());
     }
     ok = true;
-    return response.scene.world.collision_objects;
+    std::vector<moveit_msgs::CollisionObject> attObjs;
+    forEach(const moveit_msgs::AttachedCollisionObject & aco,
+            response.scene.robot_state.attached_collision_objects) {
+        attObjs.push_back(aco.object);
+    }
+    return std::make_pair(response.scene.world.collision_objects, attObjs);
 }
 
 std::vector<moveit_msgs::CollisionObject> OrkToPlanningScene::getCollisionObjectsFromObjectRecognition(

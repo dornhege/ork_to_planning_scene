@@ -13,5 +13,5 @@ string[] removed_objects
 string[] moved_objects
 string[] added_tables
 string[] removed_tables
-string[] moved_tables
+string[] updated_tables
 ---
