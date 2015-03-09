@@ -8,7 +8,7 @@ source1:
     rgb_frame_id: head_mount_kinect_rgb_optical_frame
     rgb_image_topic: head_mount_kinect/rgb/image_raw
     rgb_camera_info: head_mount_kinect/rgb/camera_info
-    depth_image_topic: head_mount_kinect/depth/image_raw
+    depth_image_topic: head_mount_kinect/depth/image_fixed
     depth_camera_info: head_mount_kinect/depth/camera_info
     #
     #crop_enabled: True
