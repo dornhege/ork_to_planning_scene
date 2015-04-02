@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib
   moveit_msgs
   object_recognition_msgs
+  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
