@@ -87,7 +87,8 @@ namespace ork_to_planning_scene
                     const std::string & table_prefix);
 
             /// Create a mesh from a list of points in a plane.
-            shape_msgs::Mesh createMeshFromCountour(const std::vector<geometry_msgs::Point> & contours);
+            shape_msgs::Mesh createMeshFromCountour(const std::vector<geometry_msgs::Point> & contours,
+                    double z_offset);
 
             /// Does this RecognizedObject fit our params for a table?
             bool isValidTable(const object_recognition_msgs::RecognizedObject & ro);
@@ -99,6 +100,9 @@ namespace ork_to_planning_scene
             /// Merge two table object contours.
             moveit_msgs::CollisionObject merge_table_objects(const moveit_msgs::CollisionObject & old_table,
                     const moveit_msgs::CollisionObject & new_table);
+
+            /// Compute the mean z value from a contour
+            double estimateContourMeanZ(const std::vector<geometry_msgs::Point> & contours);
 
             /// Convert an ORK object to a CollisionObject as good as possible.
             bool collisionObjectFromRecognizedObject(const object_recognition_msgs::RecognizedObject & ro,
