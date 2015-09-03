@@ -1,6 +1,13 @@
 <launch>
     <arg name="sim" default="false" />
 
+    <!-- some weird stuff going on in the object_recognition_server regarding setting its node name -->
+    <rosparam param="object_recognition">
+        confidence_cutoff: 0.85
+        perform_fit_merge: true
+        clipping: 0.0075
+    </rosparam>
+
     <node unless="$(arg sim)" pkg="ork_to_planning_scene" type="server" name="object_recognition_server" args="-c $(find ork_to_planning_scene)/config/detection.object.ros.ork" />
     <node if="$(arg sim)" pkg="ork_to_planning_scene" type="server" name="object_recognition_server" args="-c $(find ork_to_planning_scene)/config/detection.object.ros.gazebo.ork" />
 
