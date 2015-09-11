@@ -169,7 +169,7 @@ namespace ork_to_planning_scene
 
         protected:
             // ROS Interface
-            tf::TransformListener tf_;
+            tf::TransformListener* tf_;
 
             actionlib::SimpleActionClient<object_recognition_msgs::ObjectRecognitionAction>  actionOrk_;
             ros::ServiceClient srvObjectInfo_;

@@ -25,6 +25,7 @@ OrkToPlanningScene::OrkToPlanningScene() :
             boost::bind(&OrkToPlanningScene::orkToPlanningSceneCallback, this, _1), false)
 {
     ros::NodeHandle nh;
+    tf_ = new tf::TransformListener(ros::Duration(60.0));
 
     srvObjectInfo_ = nh.serviceClient<object_recognition_msgs::GetObjectInformation>("get_object_info");
     srvPlanningScene_ = nh.serviceClient<moveit_msgs::GetPlanningScene>(move_group::GET_PLANNING_SCENE_SERVICE_NAME);
@@ -440,9 +441,9 @@ tf::Pose OrkToPlanningScene::computeTableContourTransform(const moveit_msgs::Col
 
     // need to transform old points into new tables pose
     tf::StampedTransform oldToNew;
-    tf_.waitForTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
+    tf_->waitForTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
             ros::Duration(0.5));
-    tf_.lookupTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
+    tf_->lookupTransform(new_table.header.frame_id, old_table.header.frame_id, new_table.header.stamp,
             oldToNew);
 
     tf::Pose oldPose;
@@ -574,9 +575,9 @@ bool OrkToPlanningScene::isValidTable(const object_recognition_msgs::RecognizedO
     pose.header = ro.pose.header;
     pose.pose = ro.pose.pose.pose;
     try {
-        tf_.waitForTransform("/base_footprint", ro.pose.header.frame_id, ro.pose.header.stamp,
+        tf_->waitForTransform("/base_footprint", ro.pose.header.frame_id, ro.pose.header.stamp,
                 ros::Duration(0.5));
-        tf_.transformPose("/base_footprint", pose, pose_transformed);
+        tf_->transformPose("/base_footprint", pose, pose_transformed);
     } catch (tf::TransformException ex) {
         ROS_ERROR("%s", ex.what());
         return false;
@@ -847,9 +848,9 @@ std::pair<double, double> OrkToPlanningScene::poseDistance(const geometry_msgs::
     // OR poses might be in a sensor frame -> transform to PS frame first
     geometry_msgs::PoseStamped poseOR_transformed;
     try {
-        tf_.waitForTransform(posePS.header.frame_id, poseOR.header.frame_id, poseOR.header.stamp,
+        tf_->waitForTransform(posePS.header.frame_id, poseOR.header.frame_id, poseOR.header.stamp,
                 ros::Duration(0.5));
-        tf_.transformPose(posePS.header.frame_id, poseOR, poseOR_transformed);
+        tf_->transformPose(posePS.header.frame_id, poseOR, poseOR_transformed);
     } catch (tf::TransformException ex) {
         ROS_ERROR("%s", ex.what());
     }
