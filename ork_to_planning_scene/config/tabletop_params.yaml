@@ -1,0 +1,21 @@
+filter_planes: true
+min_table_height: 0.3
+max_table_height: 1.2
+robot_frame: /base_link
+sensor_frame: /head_mount_kinect_rgb_optical_frame
+max_angle_diff: 0.1
+
+clipping: 0.0075
+
+fitter_type: icp
+min_iterations: 20
+max_iterations: 1000
+min_iteration_improvement: 0.001
+downsample_leaf_size: 0.005
+outlier_dist: 0.03
+outlier_kernel: selection
+iniler_dist: 0.003
+inlier_kernel: huber
+
+confidence_cutoff: 0.85
+perform_fit_merge: false
