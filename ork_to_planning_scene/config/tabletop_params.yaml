@@ -17,5 +17,5 @@ outlier_kernel: selection
 iniler_dist: 0.003
 inlier_kernel: huber
 
-confidence_cutoff: 0.85
+confidence_cutoff: 0.75
 perform_fit_merge: false
