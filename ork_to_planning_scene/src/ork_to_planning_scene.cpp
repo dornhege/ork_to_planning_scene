@@ -96,7 +96,7 @@ void OrkToPlanningScene::orkToPlanningSceneCallback(
     orkGoal.use_roi = false;
     actionOrk_.sendGoal(orkGoal);
 
-    bool finished_before_timeout = actionOrk_.waitForResult(ros::Duration(30.0));
+    bool finished_before_timeout = actionOrk_.waitForResult(ros::Duration(300.0));
     if(finished_before_timeout) {
         actionlib::SimpleClientGoalState state = actionOrk_.getState();
         ROS_INFO("ORK Action finished: %s", state.toString().c_str());
