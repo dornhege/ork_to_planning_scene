@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   object_recognition_core
   object_recognition_msgs
   object_recognition_ros
+  object_recognition_tabletop
   ork_to_planning_scene_msgs
   roscpp
   rospy

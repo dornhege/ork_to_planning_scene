@@ -673,6 +673,10 @@ bool OrkToPlanningScene::collisionObjectFromRecognizedObject(const object_recogn
             return false;
         }
         co.id = objectInfo.information.name;
+        // write type information to param server, otherwise it is lost when converted to collision_detection::CollisionObject
+        std::string type_information_namespace = "/object_type_information";
+        ros::param::set(type_information_namespace+"/"+co.id+"/key", co.type.key);
+        ros::param::set(type_information_namespace+"/"+co.id+"/db", co.type.db);
     }
 
     // we now have a mesh from somewhere
